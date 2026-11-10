@@ -11,6 +11,11 @@
       "name": "grove",
       "source": "./plugins/grove",
       "description": "Git worktrees made easy: a band above the prompt to switch, diff, review, compare and commit, one chat per worktree, shared node_modules, and guards that keep agents in their own worktree."
+    },
+    {
+      "name": "wlog",
+      "source": "./plugins/worklog",
+      "description": "Never forget what you worked on. Builds a work log from your Claude Code chats and your own git commits, with a 1-page PDF and a shareable page."
     }
   ]
 }
