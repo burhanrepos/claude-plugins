@@ -1,0 +1,11 @@
+{
+  "name": "@burhan/grove",
+  "version": "0.2.0",
+  "description": "Git worktrees made easy, for people and for any coding agent.",
+  "type": "module",
+  "bin": { "grove": "bin/grove.mjs" },
+  "files": ["bin", "rules", "skills", "README.md"],
+  "engines": { "node": ">=18" },
+  "scripts": { "test": "node test/smoke.mjs", "typecheck": "npx -y -p typescript@5.6.3 tsc -p tsconfig.json" },
+  "license": "MIT"
+}

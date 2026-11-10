@@ -1,0 +1,8 @@
+{
+  "name": "grove",
+  "version": "0.2.0",
+  "description": "Git worktrees made easy: a band above the prompt to switch, diff, review, compare and commit, one chat per worktree, shared node_modules, and guards that keep agents in their own worktree.",
+  "types": "./types/index.d.ts",
+  "author": { "name": "Burhan Shaheen" },
+  "license": "MIT"
+}

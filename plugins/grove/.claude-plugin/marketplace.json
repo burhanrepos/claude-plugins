@@ -1,0 +1,6 @@
+{
+  "name": "grove",
+  "owner": { "name": "Burhan Shaheen" },
+  "plugins": [{ "name": "grove", "source": "./", "description": "Git worktrees made easy, from the Claude Code session." }],
+  "metadata": { "description": "grove: git worktrees made easy, from the Claude Code session." }
+}

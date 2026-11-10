@@ -1,6 +1,16 @@
 {
   "name": "burhanrepos",
-  "owner": { "name": "Burhan Shaheen" },
-  "metadata": { "description": "Claude Code plugins by Burhan Shaheen." },
-  "plugins": []
+  "owner": {
+    "name": "Burhan Shaheen"
+  },
+  "metadata": {
+    "description": "Claude Code plugins by Burhan Shaheen."
+  },
+  "plugins": [
+    {
+      "name": "grove",
+      "source": "./plugins/grove",
+      "description": "Git worktrees made easy: a band above the prompt to switch, diff, review, compare and commit, one chat per worktree, shared node_modules, and guards that keep agents in their own worktree."
+    }
+  ]
 }
