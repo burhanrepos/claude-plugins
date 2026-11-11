@@ -761,6 +761,9 @@ export const register: Register = (on) => {
       // Hidden until /grove: the status line under the prompt carries the summary.
       if (fold) return null;
       const t = ls.trees.find((x) => x.name === s.name);
+      const mainTree = ls.trees.find((x) => x.main);
+      // removing the worktree this chat runs in: the chat moves to the main checkout first
+      const rmHere = !!t && treeOf(ls, await $.session.cwd())?.path === t.path;
       const copy = async (what: string, text: string) => {
         const { isCopied } = await $.ui.copy({ text });
         $.ui.toast(
@@ -958,6 +961,9 @@ export const register: Register = (on) => {
                     t.running?.length
                       ? `services running: ${t.running.join(", ")}`
                       : "",
+                    rmHere
+                      ? `this chat moves to ${mainTree?.name ?? "the main checkout"} and is merged there`
+                      : "chats merged into " + (mainTree?.name ?? "the main checkout"),
                   ].filter(Boolean);
                   const force = !!(t.uncommitted || t.ahead);
                   return (
@@ -974,11 +980,16 @@ export const register: Register = (on) => {
                           $.ui.toast(`Removing ${t.name}…`);
                           try {
                             const here = treeOf(ls, await $.session.cwd());
-                            if (here && here.path === t.path) {
-                              $.ui.toast(
-                                `This chat runs in ${t.name}. Switch to another worktree first.`,
-                              );
-                              return;
+                            if (here && here.path === t.path && mainTree) {
+                              try {
+                                await $.command.run({ command: "cd", args: mainTree.path });
+                              } catch {
+                                await $.ui.copy({ text: `/cd ${mainTree.path}` });
+                                $.ui.toast(
+                                  `This chat runs in ${t.name}. Type /cd ${mainTree.path} (copied), then remove again.`,
+                                );
+                                return;
+                              }
                             }
                             const r = await act($, `removing ${t.name}`, [
                               "rm",

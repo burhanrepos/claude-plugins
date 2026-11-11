@@ -8,7 +8,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import * as chats from './sessions.mjs'
 
-const VERSION = '0.3.0'
+const VERSION = '0.3.1'
 const IS_WIN = process.platform === 'win32'
 const HOME = os.homedir()
 const CONFIG_DIR = IS_WIN ? path.join(process.env.APPDATA || HOME, 'grove') : path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'grove')

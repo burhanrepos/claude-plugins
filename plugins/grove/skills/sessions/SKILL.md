@@ -16,6 +16,7 @@ What it does:
 
 Every worktree removal stops the services running from it and merges its chats into the main checkout first:
 - `grove rm <name>` and the band's remove button do both, remove the worktree, then delete the originals
+- the band's remove button also works from the worktree's own chat: the chat moves to the main checkout (/cd) first, and its history is merged there
 - a `git worktree remove` or ExitWorktree (remove) run by Claude: the grove hook runs `grove before-rm` first
 - worktrees removed outside Claude (terminal, other tools): every new session runs `grove sessions --quiet`, which merges their chats and deletes the originals
 
