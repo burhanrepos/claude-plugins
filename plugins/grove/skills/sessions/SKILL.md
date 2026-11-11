@@ -14,9 +14,9 @@ What it does:
 - while the worktree exists the original stays, so its own chat keeps working; once the folder is gone, the original is deleted after the copy (except chats written to in the last minute)
 - runs again safely: a chat already merged and not changed since is left alone
 
-Before removing a worktree:
-- prefer `grove rm <name>`: it merges the chats, removes the worktree, then deletes the originals
-- a plain `git worktree remove` run by Claude is caught by the grove hook, which merges first; after it, run `grove sessions` once to delete the originals
-- worktrees removed outside Claude (terminal, other tools): run `grove sessions` afterwards; it still finds their chats
+Every worktree removal stops the services running from it and merges its chats into the main checkout first:
+- `grove rm <name>` and the band's remove button do both, remove the worktree, then delete the originals
+- a `git worktree remove` or ExitWorktree (remove) run by Claude: the grove hook runs `grove before-rm` first
+- worktrees removed outside Claude (terminal, other tools): every new session runs `grove sessions --quiet`, which merges their chats and deletes the originals
 
 Show the user the summary line it prints.

@@ -613,6 +613,8 @@ export const register: Register = (on) => {
       await cli($, ["link-session", id, "--agent", "claude"]);
       void refresh($);
     }
+    // Chats of worktrees removed since last time (terminal, ExitWorktree, git): into the main list, originals deleted.
+    void cli($, ["sessions", "--quiet"], 120000);
     // Numbers stay fresh: every minute, after each turn, and a quiet fetch every 10 minutes for the ↓ counts.
     let lastFetch = 0;
     $.clock.every(15000, () => {
@@ -711,9 +713,14 @@ export const register: Register = (on) => {
         };
       return next(e);
     }
+    // Removals grove does not run itself (`git worktree remove`, ExitWorktree): first merge that worktree's chats
+    // into the main checkout's list and stop services running from it, like `grove rm` does.
+    // The originals are deleted by the quiet `grove sessions` at the next session start.
+    if (tool === "ExitWorktree" && (e as Record<string, unknown>).action === "remove") {
+      await cli($, ["before-rm", "--path", await $.session.cwd()], 180000);
+      return next(e);
+    }
     if (tool !== "Bash") return next(e);
-    // A raw `git worktree remove <path>`: copy that worktree's chats into the main checkout's list first.
-    // `grove sessions` later deletes the originals once the folder is gone.
     const rm = /\bgit\b(?:\s+-C\s+("[^"]+"|'[^']+'|\S+))?[^|;&]*?\bworktree\s+remove\s+(?:-\S+\s+)*("[^"]+"|'[^']+'|[^\s|;&]+)/.exec(
       String((e as Record<string, unknown>).command ?? ""),
     );
@@ -721,7 +728,7 @@ export const register: Register = (on) => {
       const unq = (s?: string) => (s ?? "").replace(/^["']|["']$/g, "");
       const base = rm[1] ? unq(rm[1]) : await $.session.cwd();
       const target = unq(rm[2]);
-      await cli($, ["sessions", "--path", target.startsWith("/") ? target : `${base}/${target}`]);
+      await cli($, ["before-rm", "--path", target.startsWith("/") ? target : `${base}/${target}`], 180000);
     }
     // The OK itself is Claude Code's own permission prompt (classic.PreToolUse above); this runs once it was given.
     const m = GIT_WRITE.exec(String((e as Record<string, unknown>).command ?? ""));

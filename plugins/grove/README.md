@@ -62,7 +62,7 @@ Send each line as its own message:
 | Run a command | **$ shell**: type a command, Enter; one-shot, no prompts or editors | `cd "$(grove path <name>)" && …` |
 | Push | **push** | `grove push` |
 | Copy branch, path or resume command | ⧉ icons on the band | `grove here --copy branch` |
-| Keep worktree chats in the main checkout | (asked before `grove rm`) | `grove sessions` (`--dry-run` to preview) |
+| Keep worktree chats in the main checkout | automatic on every remove | `grove sessions` (`--dry-run` to preview) |
 
 Chip numbers: `+73 −9` is lines changed against the base branch; `2↓ 0↑` is commits to pull and to push. A quiet fetch every 10 minutes keeps `↓` current.
 
@@ -80,7 +80,13 @@ Paste it in any terminal. Claude Code keeps chats per folder, so the `cd` matter
 
 ### Merge chats into the main checkout
 
-`grove sessions` copies every worktree's chats, including chats of worktrees already deleted, into the main checkout's chat list. Each copy is titled `[<worktree>] <title>`, so `claude --resume` in the main checkout finds it. `grove rm` does this before it removes a worktree. Running it again is safe: chats already merged are left alone.
+`grove sessions` copies every worktree's chats, including chats of worktrees already deleted, into the main checkout's chat list. Each copy is titled `[<worktree>] <title>`, so `claude --resume` in the main checkout finds it. Running it again is safe: chats already merged are left alone.
+
+You rarely need to run it yourself. Chats are merged automatically:
+
+- **`grove rm` and the band's remove button** merge the chats, remove the worktree, then delete the original chats.
+- **`git worktree remove` or ExitWorktree run by Claude** is caught by the grove hook, which runs `grove before-rm` first: it stops the worktree's services and merges its chats.
+- **Worktrees removed outside Claude** (terminal, other tools): every new Claude session runs `grove sessions --quiet`, which merges their chats and deletes the originals.
 
 ## Other coding agents
 
@@ -105,7 +111,7 @@ To make `grove open` start Codex, set this in `~/.config/grove/config.json`:
 - **Protected branches** (from your config, for example `main` and `release`) refuse commits even with a pass.
 - **Write fence (Claude Code).** Edits outside the chat's own worktree are refused. A chat in the main checkout cannot edit a worktree nested inside it, and the other way round.
 - **Git ask (Claude Code).** `git add / commit / push / checkout / reset --hard / rebase / cherry-pick …` from the agent shows you an Allow / Deny question first.
-- **Safe remove.** `grove rm` refuses when there are uncommitted changes or unpushed commits. It unlinks shared `node_modules` before removing, so the shared copy is never deleted. It also stops what runs from the worktree first: services that `run.status` places there (through `run.stop`), then any process still listening on a port from inside the folder (Linux and macOS).
+- **Safe remove.** Every remove (`grove rm`, the band, or a `git worktree remove` by Claude) merges the worktree's chats into the main checkout first. `grove rm` refuses when there are uncommitted changes or unpushed commits. It unlinks shared `node_modules` before removing, so the shared copy is never deleted. It also stops what runs from the worktree first: services that `run.status` places there (through `run.stop`), then any process still listening on a port from inside the folder (Linux and macOS).
 
 These guard against accidents, not against a tool built to get around them.
 

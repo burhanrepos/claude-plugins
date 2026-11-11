@@ -8,7 +8,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import * as chats from './sessions.mjs'
 
-const VERSION = '0.2.0'
+const VERSION = '0.3.0'
 const IS_WIN = process.platform === 'win32'
 const HOME = os.homedir()
 const CONFIG_DIR = IS_WIN ? path.join(process.env.APPDATA || HOME, 'grove') : path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'grove')
@@ -631,13 +631,15 @@ function stopServices(R, w) {
     say(`stopped ${names.join(', ')}`)
   }
   if (IS_WIN) return
-  const mine = new Set([process.pid, process.ppid])
-  const myGroup = pgidOf(process.pid)
+  // never this process or any parent of it: Claude Code itself may run from inside the worktree
+  const mine = new Set()
+  for (let p = process.pid; p > 1 && !mine.has(p); p = +run('ps', ['-o', 'ppid=', '-p', String(p)]).out.trim() || 0) mine.add(p)
+  const myGroups = new Set([...mine].map(pgidOf))
   const killed = []
   for (const pid of listeningPids()) {
     if (mine.has(pid) || !inside(cwdOf(pid) || '/', w.path)) continue
     const pgid = pgidOf(pid)
-    const group = pgid > 1 && pgid !== myGroup && inside(cwdOf(pgid) || '/', w.path)
+    const group = pgid > 1 && !myGroups.has(pgid) && inside(cwdOf(pgid) || '/', w.path)
     try {
       process.kill(group ? -pgid : pid, 'SIGTERM')
       killed.push(pid)
@@ -839,15 +841,29 @@ COMMANDS.rm = ({ pos, flags }) => {
     if (t.uncommitted) die(`${t.name} has ${t.uncommitted} uncommitted files. Commit them, or use --force to throw them away.`)
     if (t.ahead) die(`${t.name} has ${t.ahead} commit${t.ahead > 1 ? 's' : ''} not pushed. Push first, or use --force.`)
   }
-  // its chats go into the main checkout's list first, so they stay resumable after the folder is gone
-  const src = new Map([[chats.encode(w.path), w.path]])
-  chats.merge(R.main, src).forEach(l => say(l))
-  stopServices(R, w)
+  const src = beforeRemove(R, w)
   for (const l of lockfiles(w.path)) unlinkDir(path.join(w.path, l.rel, 'node_modules'))
   const r = git(['worktree', 'remove', ...(flags.force ? ['--force'] : []), w.path], R.main)
   if (!r.ok) die(r.err)
   chats.merge(R.main, src) // folder gone now: deletes the originals that were copied
   say(`removed ${t.name} · branch ${t.branch} kept (delete it with: git branch -D ${t.branch})`)
+}
+
+// What every removal does first, whoever removes: the worktree's chats go into the main checkout's resume list,
+// and services running from it are stopped.
+function beforeRemove(R, w) {
+  if (same(w.path, R.main)) die('The main checkout cannot be removed.')
+  const src = new Map([[chats.encode(w.path), w.path]])
+  chats.merge(R.main, src).forEach(l => say(l))
+  stopServices(R, w)
+  return src
+}
+// For removals grove does not run itself (git worktree remove, ExitWorktree): the grove hook calls this first.
+COMMANDS['before-rm'] = ({ pos, flags }) => {
+  const R = repo()
+  const w = flags.path ? R.list.find(x => same(x.path, path.resolve(R.cwd, flags.path))) : find(R, pos[0])
+  if (!w) return say(`not a worktree of ${R.name}: ${flags.path}`)
+  beforeRemove(R, w)
 }
 
 // Chats of every worktree (and of worktrees already deleted) into the main checkout's resume list.
@@ -860,8 +876,9 @@ COMMANDS.sessions = ({ pos, flags }) => {
     if (same(w.path, R.main)) die('The main checkout is where chats are merged to. Name a worktree, or leave it out for all.')
     src = new Map([[chats.encode(w.path), w.path]])
   } else src = chats.sources(R.main, R.list.map(w => w.path))
-  if (!src.size) return say('no worktree chats to merge')
-  chats.merge(R.main, src, { dryRun: !!flags['dry-run'] }).forEach(l => say(l))
+  if (!src.size) return flags.quiet || say('no worktree chats to merge')
+  const out = chats.merge(R.main, src, { dryRun: !!flags['dry-run'] })
+  if (!flags.quiet) out.forEach(l => say(l))
 }
 
 COMMANDS.diff = ({ pos, flags }) => {

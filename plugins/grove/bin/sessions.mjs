@@ -36,6 +36,15 @@ export function readSession(file) {
   return { title: custom || ai || prompt, cwd, branch, turns }
 }
 
+// The folder a chat started in, from its first 64 KB (chat files run to megabytes).
+export function startCwd(file) {
+  const fd = fs.openSync(file, 'r')
+  const buf = Buffer.alloc(65536)
+  const n = fs.readSync(fd, buf, 0, buf.length, 0)
+  fs.closeSync(fd)
+  return buf.subarray(0, n).toString('utf8').match(/"cwd":"((?:[^"\\]|\\.)*)"/)?.[1] || ''
+}
+
 export const titleFor = (name, title) => (title.startsWith(`[${name}]`) ? title : `[${name}] ${title || 'untitled'}`.trim())
 
 // The chat folders that belong to worktrees of the repo whose main checkout is `main`:
@@ -48,7 +57,7 @@ export function sources(main, live, dir = projectsDir()) {
   if (!fs.existsSync(dir)) return out
   for (const d of fs.readdirSync(dir)) {
     if (!d.startsWith(prefix) || out.has(d)) continue
-    const cwd = fs.readdirSync(path.join(dir, d)).filter(f => f.endsWith('.jsonl')).map(f => readSession(path.join(dir, d, f)).cwd).find(Boolean)
+    const cwd = fs.readdirSync(path.join(dir, d)).filter(f => f.endsWith('.jsonl')).map(f => startCwd(path.join(dir, d, f))).find(Boolean)
     if (!cwd || fs.existsSync(cwd)) continue
     if (!inside(cwd, main) || inside(cwd, path.join(main, '.claude', 'worktrees'))) out.set(d, cwd)
   }
