@@ -23,6 +23,7 @@ const env = {
   LOCALAPPDATA: path.join(tmp, 'cache'),
   HOME: tmp,
   USERPROFILE: tmp,
+  CLAUDE_CONFIG_DIR: path.join(tmp, 'claude'),
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t',
   NO_COLOR: '1',
 }
@@ -145,8 +146,38 @@ step('protected branch commits are refused', () => {
   git(['checkout', '--', 'app.js'], main)
 })
 
+step('new chat starts from the worktree notes: new writes them, note adds a handoff, open sends them first', () => {
+  const task = path.join(wt, '.grove-task.md')
+  assert.match(fs.readFileSync(task, 'utf8'), /^# T-1\n[\s\S]*- Branch: fix\/internal\/T-1\n- Base: internal/)
+  assert.ok(!git(['status', '--porcelain'], wt).includes('.grove-task.md'), 'task file stays out of git status')
+  const r = spawnSync(process.execPath, [GROVE, 'note', 't-1-internal'], { cwd: main, env, encoding: 'utf8', input: 'Fix the login toast.\n' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(fs.readFileSync(task, 'utf8'), /## Handoff \([^)]+\)\n\nFix the login toast\.\n$/)
+
+  // open runs the agent through the configured terminal; capture the command instead of opening a tab
+  const cfgDir = path.join(env.XDG_CONFIG_HOME, 'grove')
+  const opened = path.join(tmp, 'opened.txt')
+  fs.mkdirSync(cfgDir, { recursive: true })
+  fs.writeFileSync(path.join(cfgDir, 'config.json'), JSON.stringify({ terminal: `echo {cmd} > ${opened}` }))
+  try {
+    ok(['open', 't-1-internal'], main)
+    for (let i = 0; i < 50 && !fs.existsSync(opened); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+    const cmd = fs.readFileSync(opened, 'utf8')
+    assert.match(cmd, /^claude You are starting in grove worktree t-1-internal \(branch fix\/internal\/T-1, base internal\)\./)
+    assert.match(cmd, /Read \.grove-task\.md at the worktree root first/)
+    assert.match(cmd, /The ticket is T-1: read it from Jira/)
+  } finally {
+    fs.rmSync(path.join(cfgDir, 'config.json'), { force: true })
+  }
+})
+
 step('link-session and here give the resume command', () => {
-  ok(['link-session', 'abc-123'], wt)
+  ok(['link-session', 'empty-chat'], wt)
+  assert.equal(json(['here'], wt).session, null, 'chat closed before its first message is no link')
+  assert.match(ok(['link-session', 'abc-123'], wt), /linked/, 'dead link does not block a new one')
+  const chatDir = path.join(env.CLAUDE_CONFIG_DIR, 'projects', path.resolve(wt).replace(/[^a-zA-Z0-9]/g, '-'))
+  fs.mkdirSync(chatDir, { recursive: true })
+  fs.writeFileSync(path.join(chatDir, 'abc-123.jsonl'), '{}\n')
   const h = json(['here'], wt)
   assert.equal(h.session, 'abc-123')
   assert.ok(h.resume.includes('claude --resume abc-123') && h.resume.includes(wt))

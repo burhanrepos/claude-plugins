@@ -1,6 +1,6 @@
 {
   "name": "@burhan/grove",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Git worktrees made easy, for people and for any coding agent.",
   "type": "module",
   "bin": { "grove": "bin/grove.mjs" },

@@ -99,7 +99,7 @@ function parseArgs(argv) {
   }
   return { pos, flags }
 }
-const VALUE_FLAGS = new Set(['wrap', 'services', 'ms', 'base', 'branch', 'type', 'name', 'message', 'files', 'port', 'new-mapping', 'copy', 'agent', 'to', 'for', 'path'])
+const VALUE_FLAGS = new Set(['in', 'wrap', 'services', 'ms', 'base', 'branch', 'type', 'name', 'message', 'files', 'port', 'new-mapping', 'copy', 'agent', 'to', 'for', 'path'])
 
 function ask(question) {
   if (!isTTY()) return ''
@@ -183,9 +183,15 @@ function gitDirOf(wt) {
   return gitOut(['rev-parse', '--absolute-git-dir'], wt)
 }
 const metaFile = wt => path.join(gitDirOf(wt), 'grove.json')
-const readMeta = wt => readJSON(metaFile(wt))
+// A Claude chat is linked when it starts, but its transcript is only written on the first message.
+// A chat closed before that leaves a link `claude --resume` cannot open ("No conversation found"): treat it as no link.
+const readMeta = wt => {
+  const m = readJSON(metaFile(wt))
+  if (m.session && (m.agent || 'claude') === 'claude' && !fs.existsSync(path.join(chats.projectsDir(), chats.encode(wt), `${m.session}.jsonl`))) delete m.session
+  return m
+}
 function writeMeta(wt, patch) {
-  const m = { ...readMeta(wt), ...patch }
+  const m = { ...readJSON(metaFile(wt)), ...patch }
   writeJSON(metaFile(wt), m)
   return m
 }
@@ -752,9 +758,15 @@ COMMANDS.new = ({ pos, flags }) => {
   if (!r.ok) die(r.err)
   say(`branch  ${branch}${existing ? ' (existing)' : ` from ${from}`}`)
   say(`folder  ${dir}`)
-  writeMeta(dir, { base, created: new Date().toISOString() })
+  const created = new Date().toISOString()
+  writeMeta(dir, { base, created, ticket: arg })
   if (IS_WIN) git(['config', 'core.longpaths', 'true'], dir)
   excludeTaskFile(R)
+  // What the worktree's first chat reads (see firstPrompt); `grove note` adds the handoff below.
+  fs.writeFileSync(
+    path.join(dir, TASK_FILE),
+    `# ${arg}\n\n- Folder: ${dir}\n- Branch: ${branch}\n- Base: ${base}\n- Created: ${created}\n`
+  )
   const want = nodeWanted(dir, dir)
   if (want) say(`node    ${want} (from .nvmrc)${has('fnm') || nvmBin(want) ? '' : dim(' · install it with nvm or fnm to switch automatically')}`)
   // Install a lockfile that differs from main by default: a worktree without its node_modules fails at first run.
@@ -812,13 +824,49 @@ COMMANDS.sync = ({ pos }) => {
   syncDeps(R, w.path, { install: false })
 }
 
+const TASK_FILE = '.grove-task.md'
+const JIRA_KEY = /^[A-Z][A-Z0-9]*-\d+$/i
+
+// First message of a worktree's new chat, so it starts from the worktree's notes instead of empty.
+// No quotes, $ or backticks: it passes through the terminal's shell as one quoted argument.
+function firstPrompt(R, w, meta) {
+  const ticket = meta.ticket && JIRA_KEY.test(meta.ticket) ? meta.ticket.toUpperCase() : ''
+  return [
+    `You are starting in grove worktree ${nameOf(R, w)} (branch ${w.branch || 'detached'}, base ${baseOf(R, w.branch, meta)}).`,
+    exists(path.join(w.path, TASK_FILE))
+      ? `Read ${TASK_FILE} at the worktree root first: it has the worktree details and the handoff from the chat that created it.`
+      : '',
+    ticket ? `The ticket is ${ticket}: read it from Jira with your Jira tools.` : '',
+    'Then tell me in a few lines what the task is and your plan, and wait for my go before editing anything.',
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 COMMANDS.open = ({ pos, flags }) => {
   const R = repo()
   const w = find(R, pos[0])
   const meta = readMeta(w.path)
-  const cmd = flags.shell ? '' : agentCmd(R, meta)
+  let cmd = flags.shell ? '' : agentCmd(R, meta)
+  // A new chat (nothing to resume) starts with the worktree's notes as its first message.
+  if (cmd && !meta.session && cmd === 'claude' && !flags['no-prompt']) cmd = `claude ${quote(firstPrompt(R, w, meta))}`
   const via = openTerminal(R, w.path, cmd || (IS_WIN ? 'Get-Location' : 'true'))
-  say(`opened  ${nameOf(R, w)} in a new ${via} tab${cmd ? ` · ${cmd}` : ''}`)
+  say(`opened  ${nameOf(R, w)} in a new ${via} tab${cmd ? ` · ${cmd.length > 120 ? cmd.slice(0, 117) + '...' : cmd}` : ''}`)
+}
+
+// Handoff for a worktree's next chat, written by the chat that knows the context: text from stdin, added to
+// the worktree's .grove-task.md (which its new chat is told to read first).
+COMMANDS.note = ({ pos }) => {
+  const R = repo()
+  const w = find(R, pos[0])
+  if (process.stdin.isTTY) die('Usage: grove note <worktree> < handoff.md   (text on stdin)')
+  const text = fs.readFileSync(0, 'utf8').trim()
+  if (!text) die('Nothing on stdin.')
+  const f = path.join(w.path, TASK_FILE)
+  const old = exists(f) ? fs.readFileSync(f, 'utf8').trimEnd() + '\n\n' : ''
+  fs.writeFileSync(f, `${old}## Handoff (${new Date().toISOString().slice(0, 16).replace('T', ' ')})\n\n${text}\n`)
+  excludeTaskFile(R)
+  say(`noted   ${nameOf(R, w)} · ${f}`)
 }
 
 COMMANDS['link-session'] = ({ pos, flags }) => {
@@ -1388,7 +1436,8 @@ COMMANDS.help = () =>
   grove ls [--json]           every worktree: changes, ↓ to pull ↑ to push, drift
   grove here [--copy path|branch|session]
   grove new <ticket> --base <branch> [--type fix|feat] [--no-pull] [--no-install] [--open]
-  grove open [name]           new terminal tab + the chat linked to that worktree
+  grove open [name]           new terminal tab + the chat linked to that worktree (a new chat starts from its notes)
+  grove note <name> < file    add a handoff (stdin) to that worktree's .grove-task.md for its next chat
   grove diff [name] [file]    changed files vs base, then one file
   grove review [name] <file>  who changed each line and when, plus the file timeline
   grove cmp <a> [b]           port check: commits ported or missing, files that differ

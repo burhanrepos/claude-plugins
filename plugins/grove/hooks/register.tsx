@@ -2005,8 +2005,16 @@ export const register: Register = (on) => {
           if (dir) {
             const name = dir.split(/[\\/]/).pop()!;
             if (busyChat) {
-              const o = await cli($, ["open", name]);
-              note = `\n\nThis chat has work on ${here!.name}, so ${name} got its own chat:\n${(o.exitCode === 0 ? o.stdout : o.stderr).trim()}`;
+              // This chat knows why the worktree exists: it writes the handoff the new chat starts from, then opens it.
+              const grove = `node ${$.plugin.root}/bin/grove.mjs`;
+              void $.prompt.submit({
+                text:
+                  `Grove created worktree ${name} (${dir}) from this chat for: ${ticket}. ` +
+                  `Write a short handoff for its new chat: pipe markdown into \`${grove} note ${name}\` with what I want done there, ` +
+                  `the context and decisions from this chat that matter for it, relevant files, and open questions (no secrets). ` +
+                  `Then run \`${grove} open ${name}\` to open its chat. Do not edit files in that worktree.`,
+              });
+              note = `\n\nThis chat has work on ${here!.name}, so ${name} gets its own chat: this chat writes its handoff, then opens it.`;
             } else {
               await cli($, ["link-session", myId, "--in", name, "--force"]);
               try {

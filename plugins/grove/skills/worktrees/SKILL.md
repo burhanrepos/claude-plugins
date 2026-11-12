@@ -22,7 +22,8 @@ Rules (the user's, enforced by hooks):
 | which worktree has X | `grove find <text>` |
 | env differs from main | `grove env <name>`; `grove env pull <name>` after the user agrees |
 | deps drift | `grove sync <name>`, or `grove install <name>` |
-| open a worktree's own chat | `grove open <name>` |
+| open a worktree's own chat | `grove open <name>` (a new chat's first message tells it to read `.grove-task.md` and the Jira ticket) |
+| hand off work to another worktree's chat | write what to do, context, decisions, files and open questions (no secrets) to `grove note <name>` on stdin, then `grove open <name>` |
 | remove | `grove rm <name>` (refuses when work would be lost; ask before `--force`; stops dev servers running from it) |
 
 The band above the prompt shows every worktree; the user can do all of this with buttons. Point them to it instead of doing git writes yourself.
