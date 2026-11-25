@@ -184,6 +184,34 @@ step('link-session and here give the resume command', () => {
   assert.match(ok(['link-session', 'other'], wt), /kept/)
 })
 
+step('a chat that started in main attaches to a worktree, and open resumes it from there', () => {
+  const projects = path.join(env.CLAUDE_CONFIG_DIR, 'projects')
+  const folder = p => path.join(projects, path.resolve(p).replace(/[^a-zA-Z0-9]/g, '-'))
+  // the chat's transcript lives in the main checkout's folder: that is where it started
+  fs.mkdirSync(folder(main), { recursive: true })
+  fs.writeFileSync(path.join(folder(main), 'moved-1.jsonl'), JSON.stringify({ type: 'user', cwd: main, message: { content: 'hi' } }) + '\n')
+  const r = spawnSync(process.execPath, [GROVE, 'attach', 't-1-prod'], { cwd: main, env: { ...env, CLAUDE_CODE_SESSION_ID: 'moved-1' }, encoding: 'utf8' })
+  assert.equal(r.status, 0, r.stderr)
+  assert.match(r.stdout, /linked\s+t-1-prod → moved-1/)
+  assert.equal(json(['here'], wt2).session, 'moved-1', 'a transcript kept in another folder still counts')
+
+  const cfgDir = path.join(env.XDG_CONFIG_HOME, 'grove')
+  const opened = path.join(tmp, 'opened-2.txt')
+  fs.mkdirSync(cfgDir, { recursive: true })
+  fs.writeFileSync(path.join(cfgDir, 'config.json'), JSON.stringify({ terminal: `echo {cmd} > ${opened}` }))
+  try {
+    ok(['open', 't-1-prod'], main)
+    for (let i = 0; i < 50 && !fs.existsSync(opened); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+    assert.equal(fs.readFileSync(opened, 'utf8').trim(), 'claude --resume moved-1')
+  } finally {
+    fs.rmSync(path.join(cfgDir, 'config.json'), { force: true })
+  }
+  const link = path.join(folder(wt2), 'moved-1.jsonl')
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'transcript linked into the worktree folder for --resume')
+  ok(['sessions', '--quiet'], main)
+  assert.ok(fs.statSync(path.join(folder(main), 'moved-1.jsonl')).size > 0, 'merging never copies the chat onto itself')
+})
+
 step('different lockfile is not linked to main', () => {
   fs.writeFileSync(path.join(wt2, 'yarn.lock'), '# lock v2\n')
   git(['commit', '-qam', 'chore: bump lock', '--no-verify'], wt2)

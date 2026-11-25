@@ -9,6 +9,30 @@ import path from 'node:path'
 // ponytail: Claude Code shortens very long folder names (>200 chars) with a hash; those are not found here.
 export const encode = p => path.resolve(p).replace(/[^a-zA-Z0-9]/g, '-')
 export const projectsDir = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects')
+
+// A chat's transcript stays in the folder of the directory it started in, even after the chat moves into a
+// worktree. Returns its path, preferring `cwd`'s folder; '' when the chat never wrote one.
+export function transcriptOf(id, cwd, dir = projectsDir()) {
+  const own = path.join(dir, encode(cwd), `${id}.jsonl`)
+  if (fs.existsSync(own)) return own
+  if (!fs.existsSync(dir)) return ''
+  for (const d of fs.readdirSync(dir)) {
+    const f = path.join(dir, d, `${id}.jsonl`)
+    if (fs.existsSync(f) && !fs.lstatSync(f).isSymbolicLink()) return f
+  }
+  return ''
+}
+
+// `claude --resume <id>` only looks in the current directory's folder: link a chat that started elsewhere into it.
+export function linkTranscript(id, cwd, dir = projectsDir()) {
+  const f = transcriptOf(id, cwd, dir)
+  const own = path.join(dir, encode(cwd), `${id}.jsonl`)
+  if (!f || f === own) return false
+  fs.mkdirSync(path.dirname(own), { recursive: true })
+  fs.rmSync(own, { force: true }) // a link left pointing at a chat file that moved
+  fs.symlinkSync(f, own)
+  return true
+}
 const inside = (child, parent) => {
   const r = path.relative(parent, child)
   return r === '' || (!!r && !r.startsWith('..') && !path.isAbsolute(r))
@@ -76,6 +100,11 @@ export function merge(main, srcs, { dryRun = false, dir = projectsDir(), now = D
     const gone = !fs.existsSync(wt)
     for (const f of fs.readdirSync(from).filter(f => f.endsWith('.jsonl'))) {
       const src = path.join(from, f), to = path.join(dest, f)
+      // A link `grove open` made to a chat kept in another folder: that chat is listed there already.
+      if (fs.lstatSync(src).isSymbolicLink()) {
+        if (gone && !dryRun) fs.rmSync(src, { force: true })
+        continue
+      }
       const s = readSession(src)
       if (!s.turns) continue
       const st = fs.statSync(src)

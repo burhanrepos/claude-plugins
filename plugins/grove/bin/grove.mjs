@@ -8,7 +8,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import * as chats from './sessions.mjs'
 
-const VERSION = '0.3.1'
+const VERSION = '0.3.3'
 const IS_WIN = process.platform === 'win32'
 const HOME = os.homedir()
 const CONFIG_DIR = IS_WIN ? path.join(process.env.APPDATA || HOME, 'grove') : path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'grove')
@@ -185,9 +185,10 @@ function gitDirOf(wt) {
 const metaFile = wt => path.join(gitDirOf(wt), 'grove.json')
 // A Claude chat is linked when it starts, but its transcript is only written on the first message.
 // A chat closed before that leaves a link `claude --resume` cannot open ("No conversation found"): treat it as no link.
+// A chat that started elsewhere and moved into the worktree keeps its transcript in that first folder.
 const readMeta = wt => {
   const m = readJSON(metaFile(wt))
-  if (m.session && (m.agent || 'claude') === 'claude' && !fs.existsSync(path.join(chats.projectsDir(), chats.encode(wt), `${m.session}.jsonl`))) delete m.session
+  if (m.session && (m.agent || 'claude') === 'claude' && !chats.transcriptOf(m.session, wt)) delete m.session
   return m
 }
 function writeMeta(wt, patch) {
@@ -734,7 +735,7 @@ function pick(R) {
 COMMANDS.new = ({ pos, flags }) => {
   const R = repo()
   const arg = pos[0]
-  if (!arg) die('Usage: grove new <ticket or branch> [--base <branch>] [--type fix|feat] [--name <folder>] [--no-install]')
+  if (!arg) die('Usage: grove new <ticket or branch> [--base <branch>] [--type fix|feat] [--name <folder>] [--no-install] [--open | --attach]')
   const base = flags.base || R.cfg.defaultBase || remoteHead(R.main) || 'main'
   const branch = flags.branch || (arg.includes('/') ? arg : R.cfg.branch.replace('{type}', flags.type || R.cfg.type).replace('{base}', base).replace('{ticket}', arg))
   const folder = flags.name || `${arg.split('/').pop()}-${base}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')
@@ -775,7 +776,8 @@ COMMANDS.new = ({ pos, flags }) => {
   copyEnv(R, dir)
   say(green(`ready   ${dir}`))
   if (missing) say(yellow(`        deps missing: cd into it and run grove install`))
-  if (flags.open) COMMANDS.open({ pos: [folder], flags: {} })
+  if (flags.attach) COMMANDS.attach({ pos: [folder], flags: {} })
+  else if (flags.open) COMMANDS.open({ pos: [folder], flags: {} })
 }
 
 function excludeTaskFile(R) {
@@ -850,6 +852,8 @@ COMMANDS.open = ({ pos, flags }) => {
   let cmd = flags.shell ? '' : agentCmd(R, meta)
   // A new chat (nothing to resume) starts with the worktree's notes as its first message.
   if (cmd && !meta.session && cmd === 'claude' && !flags['no-prompt']) cmd = `claude ${quote(firstPrompt(R, w, meta))}`
+  // A chat that moved into this worktree from elsewhere: make its transcript findable from here.
+  if (cmd && meta.session && (meta.agent || 'claude') === 'claude') chats.linkTranscript(meta.session, w.path)
   const via = openTerminal(R, w.path, cmd || (IS_WIN ? 'Get-Location' : 'true'))
   say(`opened  ${nameOf(R, w)} in a new ${via} tab${cmd ? ` · ${cmd.length > 120 ? cmd.slice(0, 117) + '...' : cmd}` : ''}`)
 }
@@ -878,6 +882,18 @@ COMMANDS['link-session'] = ({ pos, flags }) => {
   if (meta.session && meta.session !== id && !flags.force) return say(`kept    ${meta.session} (use --force to link ${id})`)
   writeMeta(w.path, { session: id, agent: flags.agent || 'claude', linked: new Date().toISOString() })
   say(`linked  ${nameOf(R, w)} → ${id}`)
+}
+
+// The chat running this command takes over a worktree (default: the current one): it becomes the chat that
+// "open session" there resumes. The chat still has to move there itself (EnterWorktree, or /cd).
+COMMANDS.attach = ({ pos, flags }) => {
+  const id = flags.session || process.env.CLAUDE_CODE_SESSION_ID
+  if (!id) die('Run it from a Claude Code chat, or pass --session <id>.')
+  const R = repo()
+  const w = find(R, pos[0])
+  if (same(w.path, R.main)) die('The main checkout has no linked chat: name a worktree.')
+  COMMANDS['link-session']({ pos: [id], flags: { in: pos[0], force: true } })
+  say(`move    this chat there: EnterWorktree with path ${w.path} (or /cd ${w.path})`)
 }
 
 COMMANDS.rm = ({ pos, flags }) => {
@@ -1435,9 +1451,10 @@ COMMANDS.help = () =>
   grove                       pick a worktree and cd there (after: grove setup)
   grove ls [--json]           every worktree: changes, ↓ to pull ↑ to push, drift
   grove here [--copy path|branch|session]
-  grove new <ticket> --base <branch> [--type fix|feat] [--no-pull] [--no-install] [--open]
+  grove new <ticket> --base <branch> [--type fix|feat] [--no-pull] [--no-install] [--open | --attach]
   grove open [name]           new terminal tab + the chat linked to that worktree (a new chat starts from its notes)
   grove note <name> < file    add a handoff (stdin) to that worktree's .grove-task.md for its next chat
+  grove attach [name]         link the Claude chat running this to that worktree (then move it there)
   grove diff [name] [file]    changed files vs base, then one file
   grove review [name] <file>  who changed each line and when, plus the file timeline
   grove cmp <a> [b]           port check: commits ported or missing, files that differ

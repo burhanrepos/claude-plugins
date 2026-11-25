@@ -462,7 +462,8 @@ function treeActions($: EngineInterface, t: Tree, ls: Ls) {
     },
     {
       key: "switch",
-      label: "switch here",
+      // A worktree with no chat of its own: this chat moves there and becomes its chat.
+      label: t.session || t.main ? "switch here" : "attach this chat",
       color: C.sw,
       run: async () => {
         const here = treeOf(ls, await $.session.cwd());
@@ -481,8 +482,12 @@ function treeActions($: EngineInterface, t: Tree, ls: Ls) {
             return;
           }
         }
+        if (!t.session && !t.main) {
+          await cli($, ["link-session", await $.session.id(), "--in", t.name]);
+        }
         try {
           await $.command.run({ command: "cd", args: t.path });
+          if (!t.session && !t.main) $.ui.toast(`This chat is now ${t.name}'s chat.`);
         } catch {
           await $.ui.copy({ text: `/cd ${t.path}` });
           $.ui.toast(`Type /cd ${t.path} (copied)`);
@@ -634,7 +639,15 @@ export const register: Register = (on) => {
   });
 
   on("turn.complete", async ($, e, next) => {
-    void refresh($);
+    void (async () => {
+      // A chat that moved into a worktree with no chat of its own (EnterWorktree, /cd after `grove new`)
+      // becomes that worktree's chat, so "open session" there resumes it.
+      if (e.agentId === undefined) {
+        const t = treeOf(await read($, data), await $.session.cwd());
+        if (t && !t.main && !t.session) await cli($, ["link-session", await $.session.id(), "--in", t.name]);
+      }
+      await refresh($);
+    })();
     return next(e);
   });
 

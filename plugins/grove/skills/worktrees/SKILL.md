@@ -16,6 +16,8 @@ Rules (the user's, enforced by hooks):
 | list worktrees | `grove ls` |
 | where am I | `grove here` |
 | new worktree for a ticket | `grove new SAB-123 --base internal` (add `--type feat`; it installs deps when a lockfile differs from main, `--no-install` skips) |
+| new worktree for the work this chat is about (chat not already working in another worktree) | `grove new SAB-123 --base internal --attach`, then move this chat there with EnterWorktree (`path` = the printed folder). The chat becomes that worktree's chat: "open session" there resumes it |
+| make this chat a worktree's chat | `grove attach <name>`, then EnterWorktree with its folder |
 | what changed | `grove diff --stat` or `grove diff <name> <file>` |
 | who changed these lines | `grove review <name> <file>` |
 | is the fix ported | `grove cmp <a> <b>` |
@@ -26,4 +28,4 @@ Rules (the user's, enforced by hooks):
 | hand off work to another worktree's chat | write what to do, context, decisions, files and open questions (no secrets) to `grove note <name>` on stdin, then `grove open <name>` |
 | remove | `grove rm <name>` (refuses when work would be lost; ask before `--force`; stops dev servers running from it) |
 
-The band above the prompt shows every worktree; the user can do all of this with buttons. Point them to it instead of doing git writes yourself.
+In Claude Code, the band above the prompt shows every worktree; the user can do all of this with buttons. Point them to it instead of doing git writes yourself. In Codex there is no band: point the user to `grove commit` and `grove push` in their own terminal.
